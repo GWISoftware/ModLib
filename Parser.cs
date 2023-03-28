@@ -52,39 +52,52 @@ namespace ModLib
                 var data = ExtractFabricJson(modPath);
                 if (string.IsNullOrEmpty(data)) throw new Exception("Failed to read fabric.mod.json");
                 
-                //todo clean this up and maybe use JObject throughout the whole thing.
-                var json = JsonConvert.DeserializeObject<dynamic>(data);
-                if (json.schemaVersion == null || json.name == null || json.id == null || json.version == null || json.description == null || json.authors == null
-                    || json.contact == null || json.icon == null || json.environment == null) throw new Exception("invalid or corrupt fabric.mod.json");
+                // parse & sanity check
+                var json = JObject.Parse(data);
+                if (!json.ContainsKey("schemaVersion")) throw new BadJsonException("Missing 'schemaVersion'");
+                if (!json.ContainsKey("name")) throw new BadJsonException("Missing 'name'");
+                if (!json.ContainsKey("description")) throw new BadJsonException("Missing 'description'");
+                if (!json.ContainsKey("authors")) throw new BadJsonException("Missing 'authors'");
+                if (!json.ContainsKey("contact")) throw new BadJsonException("Missing 'contact'");
+                //if (!json.ContainsKey("icon")) throw new BadJsonException("Missing 'icon'"); // todo not 100% sure if mods "need" an icon in the json
+                if (!json.ContainsKey("environment")) throw new BadJsonException("Missing 'environment'");
                 
-                SchemaVersion = json.schemaVersion.ToString();
-                Name = json.name.ToString();
-                Version = json.version.ToString();
-                Description = json.description.ToString();
+                //var json = JsonConvert.DeserializeObject<dynamic>(data);
+                //if (json.schemaVersion == null || json.name == null || json.id == null || json.version == null || json.description == null || json.authors == null
+                //    || json.contact == null || json.icon == null || json.environment == null) throw new Exception("invalid or corrupt fabric.mod.json");
                 
+                SchemaVersion = (string)json["schemaVersion"];
+                Name = (string)json["name"];
+                Version = (string)json["version"];
+                Description = (string)json["description"];
+
                 Authors = new List<string>();
-                foreach (var author in json.authors) Authors.Add(author.ToString());
-
-                var jObjData = JObject.Parse(data);
+                var authorsArray = (JArray)json["authors"];
+                if (authorsArray == null) throw new BadJsonException("Missing 'authors'"); // should never happen but
+                foreach (var author in authorsArray) Authors.Add((string)author);
                 
-                Contact = ParseDict(jObjData, "contact");
-                if (json.icon != null) Icon = json.icon.ToString();
-                Environment = json.environment.ToString();
-                if (json.depends != null) Depends = ParseDict(jObjData, "depends");
-                if (json.breaks == null) return this;
+                Contact = ParseDict(json, "contact");
+                //if (json.icon != null) Icon = json.icon.ToString();
+                if (json.ContainsKey("icon")) Icon = (string)json["icon"];
+                Environment = (string)json["environment"];
+                if (json.ContainsKey("depends")) Depends = ParseDict(json, "depends");
+                if (!json.ContainsKey("breaks")) return this;
 
-                Breaks = ParseDict(jObjData, "breaks");
+                Breaks = ParseDict(json, "breaks");
                 return this;
             }
         }
         
         private static Dictionary<string, string> ParseDict(JObject json, string valueName)
         {
+            //var mod = JObject.Parse(json);
+            //var result = new Dictionary<string, string>();
+
             if (!(json.GetValue(valueName) is JObject value)) return null;
-            
             var contactDictionary = value.Properties()
                 .Select(p => new KeyValuePair<string, string>(p.Name, p.Value.ToString()))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            
             return contactDictionary;
         }
         
@@ -125,6 +138,15 @@ namespace ModLib
             {
                 if (string.IsNullOrEmpty(line) || line.StartsWith(";") || line.StartsWith("#") || line.StartsWith("'")) return false;
                 return line.Contains("=");
+            }
+        }
+        
+        // Exceptions
+        public class BadJsonException : Exception
+        {
+            public BadJsonException(string message) : base(message)
+            {
+                
             }
         }
         
